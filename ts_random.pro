@@ -1,14 +1,13 @@
-function ts_random, psd, r_s=r_s
+function ts_random, psd, res, r_s=r_s
 
   if keyword_set(r_s) then r_s = r_s else r_s = 17
 
-  print, r_s
-  if psd.length ne 1801 then message,'Spectral length must be 1801 derived from 1 hour time series'
+  if (psd.length ne 1801 and psd.length ne 181) then message,'Spectral length must be 1801 or 181 and derived from 1 hour time series'
   
   ts_len = psd.length*2-2
   
   ; convert psd to 1-sided FFT spectrum
-  f_spec = sqrt(psd/(ts_len*2.))  
+  f_spec = sqrt(psd/(res*ts_len*2.))  
 
   ; create 2-sided FFT from the 1-side FFT
   rfft = fltarr(f_spec.length*2-2)
