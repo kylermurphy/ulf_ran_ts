@@ -29,7 +29,7 @@ pro ulf_random, sdate, edate, res, $
   ; create l grid
   l_grid = findgen((l_max-l_min)/l_bin + 1)*l_bin+l_min
   ; create centered mlt grid
-  m_grid = findgeN((mlt_max-mlt_min)/mlt_bin + 1)*mlt_bin+mlt_min+mlt_bin/2.
+  m_grid = findgen((mlt_max-mlt_min)/mlt_bin + 1)*mlt_bin+mlt_min+mlt_bin/2.
   
   ; convert l/mlt grid to x/y
   theta = m_grid*(360/24.)*!pi/180.
@@ -116,11 +116,16 @@ pro ulf_random, sdate, edate, res, $
   
     fixplot
     
-  
-    b_spec = b_spec[0:r_c-1,*]
-    e_spec = e_spec[0:r_c-1,*]
+    ; only use frequencies upto 10 mHz (the max from the mapping)
+    ; this is what Louis recommends
+    b_spec = b_spec[0:r_c-1,0:n_elements(e_map.freq)]
+    e_spec = e_spec[0:r_c-1,0:n_elements(e_map.freq)]
     lsh = lsh[0:r_c-1]
     mlt = mlt[0:r_c-1]
+    
+    ; get nyquist frequency and time step
+    nyq = max(e_map.freq)/1000.
+    d_t = 1/(2.*nyq)
     
     t_d = mlt*(360/24.)*!pi/180.
     
@@ -144,15 +149,27 @@ pro ulf_random, sdate, edate, res, $
       z_spec[*,w] = z_i
     endfor
     
-    ; create time series of data 
-    ts_ran = ts_random(10^z_spec[100,*], res, r_s=long(r_seed))
+    ; create time series of data
+    ; from the interopolate z spectrum
+    ts_ran = ts_random(reform(10.^z_spec[0,*]), d_t, r_s=long(r_seed))
+    psd = psd_calc(ts_ran, res=d_t)
     
-    ; 
-    ; Fix max frequency for mapping 
-    ;
-    ;
-    stop
-  
+    ts_arr = fltarr(z_i.length,ts_ran.length)
+    ts_norm = ts_arr
+    
+    ; get a set of random numbers to generate the time series
+    ; increment the seed by i each time so each hour we generate
+    ; a new set of seeds different from the last hour
+    r_ts = randomn(long(r_seed)+i, z_i.length)
+    r_ts = r_ts-min(r_ts)
+    r_ts = long(r_ts*1000.)
+    for w=0L, z_i.length-1 do begin 
+      ts = ts_random(reform(10.^z_spec[w,*]), d_t, r_s=long(r_ts[w]))
+      
+      ts_arr[w,*] = ts
+      ts_norm[w,*] = normalize_vec(ts)
+    endfor  
+    
     ; sum data and interpolated arrays
     ; over all frequencies for visulaization
     dat_p = total(alog10(e_spec),2,/nan)
@@ -161,22 +178,59 @@ pro ulf_random, sdate, edate, res, $
     c_min = min([dat_p,int_p],max=c_max)
   
     fixplot
-    window,0, xsize = 500, ysize = 1000
+    window,1, xsize = 500, ysize = 1000
     !p.multi=[0,2,5,0,0]
+    !p.charsize=1.5
     !y.omargin = [5,5]
     !y.margin = [0,0]
     
     ;plot data
-    plot, x_grid, y_grid, /isotropic, /nodata
+    plot, x_grid, y_grid, /isotropic, /nodata, title='Mapped Summed PSD!DE!N'
     loadct,25,/silent
     ;cc = bytscl(alog10(total(e_spec,2))
     plots, x_d, y_d, color=bytscl(dat_p,min=cmin,max=cmax), psym=sym(1) 
     
     ; plot interpolated data
     loadct,0,/silent
-    plot, x_grid, y_grid, /isotropic, /nodata
+    plot, x_grid, y_grid, /isotropic, /nodata, title='Interpolated Summed PSD!DE!N
     loadct,25,/silent
     plots, x_grid, y_grid, color=bytscl(int_p,min=cmin,max=cmax), psym=sym(1)
+    
+    ;get a random set of 
+    !p.multi=[4,1,5,0,0]
+    !p.charsize=1.5
+    !y.margin = [0,5]
+    !x.margin = [10,10]
+    t = findgen(n_elements(ts_arr[0,*]))*d_t
+    t_range = [min(t,max=max_t),max_t]
+    f_range = [0,max(e_map.freq)]
+    y_range = [0,z_i.length-1]
+    
+    ; plot interpolated spectrum
+    loadct,0,/silent
+    plot, f_range,y_range,/nodata,ytitle='Interpolated PSD'
+    loadct,25,/silent
+    tvscale,transpose(z_spec),/overplot,/nointerpolation
+    
+    ; plot random time series
+    loadct,0,/silent
+    plot, t,y_range,/nodata, ytitle='Normalized!CRandom TS'
+    loadct,25,/silent
+    tvscale,transpose(ts_norm),/overplot,/nointerpolation
+
+    !p.multi=[1,1,2,0,0]
+    !p.charsize=1
+    !y.margin = [0,15]
+    !x.margin = [7,15]
+    ts_num = normalize_vec((randomn(6,1000)+1))
+    ts_num = abs(ts_num[0:10])*(z_i.length-1)
+    ts_num = long(ts_num)
+    l_leg = sqrt(x_grid[ts_num]^2. + y_grid[ts_num]^2.)
+    m_leg = atan(y_grid[ts_num],x_grid[ts_num])*(180./!pi)*(24./360.)
+    bd = where(m_leg lt 0, c)
+    if c gt 0 then m_leg[bd] = m_leg[bd]+24.
+    y_leg = string(l_leg, format='(F4.1)')+', '+string(m_leg,format='(F4.1)')  
+    stack_plot,t,transpose(ts_arr[ts_num,*]),y_leg
     stop
   endfor
   

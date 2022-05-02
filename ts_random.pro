@@ -2,10 +2,12 @@ function ts_random, psd, res, r_s=r_s
 
   if keyword_set(r_s) then r_s = r_s else r_s = 17
 
-  if (psd.length ne 1801 and psd.length ne 181) then message,'Spectral length must be 1801 or 181 and derived from 1 hour time series'
+  npts = 3600/(2*res) + 1
+
+  if psd.length ne npts or psd.length mod 2 ne 1 then message,'PSD window must be 1 hour and PSD length must be odd'
   
   ts_len = psd.length*2-2
-  
+ 
   ; convert psd to 1-sided FFT spectrum
   f_spec = sqrt(psd/(res*ts_len*2.))  
 
