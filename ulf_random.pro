@@ -1,4 +1,4 @@
-pro ulf_random, sdate, edate, res, $
+pro ulf_random, sdate, edate, $
   l_min=l_min, $
   l_max=l_max, $
   l_bin=l_bin, $
@@ -17,14 +17,6 @@ pro ulf_random, sdate, edate, res, $
   if keyword_set(mlt_bin) then mlt_bin=mlt_bin else mlt_bin=1
   if keyword_set(r_seed) then r_seed=r_seed else r_seed=17
   if keyword_set(d_dir) then d_dir=d_dir else d_dir='D:\data\magnetometer\psd\'
-  
-  if res eq 1 then begin
-    npts = 1801
-  endif else if res eq 10 then begin
-    npts = 181
-  endif else begin
-    message, 'Resolution must be 10 or 1'
-  endelse
   
   ; create l grid
   l_grid = findgen((l_max-l_min)/l_bin + 1)*l_bin+l_min
@@ -53,6 +45,7 @@ pro ulf_random, sdate, edate, res, $
   stn_vals = stn_dat(y_i)
   ;load electric field mapping values
   e_map = gb2ee( )
+  npts = n_elements(e_map.freq)+1
   
   for i=0L, t_arr.length-1 do begin
     fs = d_dir+time_string(t_arr[i],tformat='YYYY/MM/DD/')
@@ -118,6 +111,7 @@ pro ulf_random, sdate, edate, res, $
     
     ; only use frequencies upto 10 mHz (the max from the mapping)
     ; this is what Louis recommends
+    ; the max frequency from the e_map is 10 mHz
     b_spec = b_spec[0:r_c-1,0:n_elements(e_map.freq)]
     e_spec = e_spec[0:r_c-1,0:n_elements(e_map.freq)]
     lsh = lsh[0:r_c-1]
@@ -214,7 +208,7 @@ pro ulf_random, sdate, edate, res, $
     
     ; plot random time series
     loadct,0,/silent
-    plot, t,y_range,/nodata, ytitle='Normalized!CRandom TS'
+    plot, t,y_range,/nodata, ytitle='Normalized!CRandom TS', title='Random TS, '+strtrim(long(d_t),2)+' sec'
     loadct,25,/silent
     tvscale,transpose(ts_norm),/overplot,/nointerpolation
 
@@ -248,6 +242,6 @@ end
 
 
 
-ulf_random,'2016-09-26','2016-10-07',10
+ulf_random,'2016-09-26','2016-10-07'
 
 end
