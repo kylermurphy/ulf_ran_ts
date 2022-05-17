@@ -1,3 +1,8 @@
+function neg_ticks, axis, index, value
+  return, string(-1*value,format='(F4.1)')
+end
+
+
 pro ulf_random, sdate, edate, $
   l_min=l_min, $
   l_max=l_max, $
@@ -6,7 +11,10 @@ pro ulf_random, sdate, edate, $
   mlt_max=mlt_max, $
   mlt_bin=mlt_bin, $
   r_seed = r_seed, $ ; random seed so results are reproducible
-  d_dir = d_dir
+  d_dir = d_dir, $
+  o_dir = o_dir, $
+  verbose=verbose, $
+  movie=movie
   
   
   if keyword_set(l_min) then l_min=l_min else l_min=3.
@@ -17,6 +25,9 @@ pro ulf_random, sdate, edate, $
   if keyword_set(mlt_bin) then mlt_bin=mlt_bin else mlt_bin=1
   if keyword_set(r_seed) then r_seed=r_seed else r_seed=17
   if keyword_set(d_dir) then d_dir=d_dir else d_dir='D:\data\magnetometer\psd\'
+  if keyword_set(o_dir) then o_dir=o_dir else o_dir='D:\out_put\ulf_ran_ts\'
+  if keyword_set(verbose) then verbose=verbose else verbose=0
+  if keyword_set(movie) then movie=1 else movie=0
   
   ; create l grid
   l_grid = findgen((l_max-l_min)/l_bin + 1)*l_bin+l_min
@@ -46,6 +57,28 @@ pro ulf_random, sdate, edate, $
   ;load electric field mapping values
   e_map = gb2ee( )
   npts = n_elements(e_map.freq)+1
+  
+  ;list to hold the final timeseries
+  tf = list()
+  
+  ;get omni data 
+  o1h = get_omni_1hr(date_min=sd,date_max=ed)
+  x_tk = time_ticks([sd,ed], offset)
+  x_tk.xtickv=x_tk.xtickv+offset
+  x_tk.xrange=x_tk.xrange+offset
+  
+  ;movie output
+  if keyword_set(movie) then begin
+    video_file = time_string(sd,tformat='YYYYMMDD')+'_'+time_string(ed,tformat='YYYYMMDD')
+    video_file = 'ULF_ran_ts_'+video_file
+    video_file = video_file+'.mp4'
+    framerate=5
+    ; Open the video recorder.
+    video = IDLffVideoWrite(o_dir+video_file, Format='mp4')
+    ; Configure the video output for the PNG files you
+    ; plan to add.
+    stream = video.AddVideoStream(500, 1000, framerate)
+  endif
   
   for i=0L, t_arr.length-1 do begin
     fs = d_dir+time_string(t_arr[i],tformat='YYYY/MM/DD/')
@@ -103,12 +136,10 @@ pro ulf_random, sdate, edate, $
       e_spec[r_c,*] = e1
       
       
-      print, strtrim(h_i,2)+' '+stn[j]+' '+strtrim(m_val,2)+' '+strtrim(lsh[r_c],2)+' '+strtrim(e_diff,2)
+      if verbose gt 1 then print, strtrim(h_i,2)+' '+stn[j]+' '+strtrim(m_val,2)+' '+strtrim(lsh[r_c],2)+' '+strtrim(e_diff,2)
       r_c++
     endfor
-  
-    fixplot
-    
+
     ; only use frequencies upto 10 mHz (the max from the mapping)
     ; this is what Louis recommends
     ; the max frequency from the e_map is 10 mHz
@@ -139,7 +170,7 @@ pro ulf_random, sdate, edate, $
     ; loop to interpolate rest of frequencies
     for w=2, n_elements(z_spec[0,*])-1 do begin
       z_d = alog10(e_spec[*,w])
-      z_i = griddata(x_d,y_d,z_d, method='Kriging', xout=x_grid,yout=y_grid) 
+      z_i = griddata(x_d,y_d,z_d, method='Kriging', xout=x_grid,yout=y_grid,variogram=[1]) 
       z_spec[*,w] = z_i
     endfor
     
@@ -164,6 +195,9 @@ pro ulf_random, sdate, edate, $
       ts_norm[w,*] = normalize_vec(ts)
     endfor  
     
+    ;add the new timeseries to the final list
+    tf.add, ts_arr 
+    
     ; sum data and interpolated arrays
     ; over all frequencies for visulaization
     dat_p = total(alog10(e_spec),2,/nan)
@@ -171,63 +205,89 @@ pro ulf_random, sdate, edate, $
   
     c_min = min([dat_p,int_p],max=c_max)
   
-    fixplot
-    window,1, xsize = 500, ysize = 1000
-    !p.multi=[0,2,5,0,0]
-    !p.charsize=1.5
-    !y.omargin = [5,5]
-    !y.margin = [0,0]
+    if verbose gt 0 then begin
     
-    ;plot data
-    plot, x_grid, y_grid, /isotropic, /nodata, title='Mapped Summed PSD!DE!N'
-    loadct,25,/silent
-    ;cc = bytscl(alog10(total(e_spec,2))
-    plots, x_d, y_d, color=bytscl(dat_p,min=cmin,max=cmax), psym=sym(1) 
+      fixplot
+      window,1, xsize = 500, ysize = 1000
+      !p.multi=[0,2,6,0,0]
+      !p.charsize=1.5
+      !y.omargin = [5,5]
+      !y.margin = [0,0]
+      
+      ;plot data
+      plot, x_grid, y_grid, /isotropic, /nodata, title='Mapped Summed PSD!DE!N', $
+        xtickf='neg_ticks', ytickf='neg_ticks'
+      loadct,25,/silent
+      ;cc = bytscl(alog10(total(e_spec,2))
+      plots, x_d, y_d, color=bytscl(dat_p,min=cmin,max=cmax), psym=sym(1) 
+      
+      ; plot interpolated data
+      loadct,0,/silent
+      plot, x_grid, y_grid, /isotropic, /nodata, title='Interpolated Summed PSD!DE!N', $
+        xtickf='neg_ticks', ytickf='neg_ticks'
+      loadct,25,/silent
+      plots, x_grid, y_grid, color=bytscl(int_p,min=cmin,max=cmax), psym=sym(1)
+      
+      loadct,0,/silent
+      xyouts,0.5,0.98, time_string(t_arr[i])+'-'+time_string(t_arr[i]+3600,tformat='hh:mm:ss'), $
+         /normal, alignment=0.5, charsize=1.
+      
+      ;get a random set of 
+      !p.multi=[5,1,6,0,0]
+      !p.charsize=1.5
+      !y.margin = [0,5]
+      !x.margin = [10,10]
+      t = findgen(n_elements(ts_arr[0,*]))*d_t
+      t_range = [min(t,max=max_t),max_t]
+      f_range = [0,max(e_map.freq)]
+      y_range = [0,z_i.length-1]
+      
+      loadct,0,/silent
+      plot, o1h.date_themis, o1h.dst , _extra=x_tk, ytitle='Dst'
+      oplot, [t_arr[i],t_arr[i]],!y.crange,linestyle=2
+      oplot, [t_arr[i],t_arr[i]]+3600,!y.crange,linestyle=2 
+      
+      ; plot interpolated spectrum
+      loadct,0,/silent
+      plot, f_range,y_range,/nodata,ytitle='Interpolated PSD'
+      loadct,25,/silent
+      tvscale,transpose(z_spec),/overplot,/nointerpolation
+      
+      ; plot random time series
+      loadct,0,/silent
+      plot, t,y_range,/nodata, ytitle='Normalized!CRandom TS', title='Random TS, '+strtrim(long(d_t),2)+' sec resolution'
+      loadct,25,/silent
+      tvscale,transpose(ts_norm),/overplot,/nointerpolation
+  
+      !p.multi=[1,1,3,0,0]
+      !p.charsize=1.5
+      !y.margin = [0,5]
+      !x.margin = [15,20]
+      ts_num = normalize_vec((randomn(ssss,1000)+1))
+      ts_num = abs(ts_num[0:10])*(z_i.length-1)
+      ts_num = long(ts_num)
+      l_leg = sqrt(x_grid[ts_num]^2. + y_grid[ts_num]^2.)
+      m_leg = atan(y_grid[ts_num],x_grid[ts_num])*(180./!pi)*(24./360.)
+      bd = where(m_leg lt 0, c)
+      if c gt 0 then m_leg[bd] = m_leg[bd]+24.
+      y_leg = string(l_leg, format='(F4.1)')+', '+string(m_leg,format='(F4.1)')  
+      stack_plot,t,transpose(ts_arr[ts_num,*]),y_leg, $
+        title='Random Sample of Time Series', xtitle = 'Time - seconds', $
+        ytitle='Electric Field Perturbation'
+      xyouts,!p.clip[2], !p.clip[3], ' L/R, MLT',/device
     
-    ; plot interpolated data
-    loadct,0,/silent
-    plot, x_grid, y_grid, /isotropic, /nodata, title='Interpolated Summed PSD!DE!N
-    loadct,25,/silent
-    plots, x_grid, y_grid, color=bytscl(int_p,min=cmin,max=cmax), psym=sym(1)
+      if keyword_set(movie) then begin
+        wset,1
+        makepng, o_dir+'ran_ts'
+        im_mov = Read_PNG(o_dir+'ran_ts.png')
+        void = video.Put(stream, im_mov)
+      endif
+    endif
     
-    ;get a random set of 
-    !p.multi=[4,1,5,0,0]
-    !p.charsize=1.5
-    !y.margin = [0,5]
-    !x.margin = [10,10]
-    t = findgen(n_elements(ts_arr[0,*]))*d_t
-    t_range = [min(t,max=max_t),max_t]
-    f_range = [0,max(e_map.freq)]
-    y_range = [0,z_i.length-1]
     
-    ; plot interpolated spectrum
-    loadct,0,/silent
-    plot, f_range,y_range,/nodata,ytitle='Interpolated PSD'
-    loadct,25,/silent
-    tvscale,transpose(z_spec),/overplot,/nointerpolation
-    
-    ; plot random time series
-    loadct,0,/silent
-    plot, t,y_range,/nodata, ytitle='Normalized!CRandom TS', title='Random TS, '+strtrim(long(d_t),2)+' sec'
-    loadct,25,/silent
-    tvscale,transpose(ts_norm),/overplot,/nointerpolation
-
-    !p.multi=[1,1,2,0,0]
-    !p.charsize=1
-    !y.margin = [0,15]
-    !x.margin = [7,15]
-    ts_num = normalize_vec((randomn(6,1000)+1))
-    ts_num = abs(ts_num[0:10])*(z_i.length-1)
-    ts_num = long(ts_num)
-    l_leg = sqrt(x_grid[ts_num]^2. + y_grid[ts_num]^2.)
-    m_leg = atan(y_grid[ts_num],x_grid[ts_num])*(180./!pi)*(24./360.)
-    bd = where(m_leg lt 0, c)
-    if c gt 0 then m_leg[bd] = m_leg[bd]+24.
-    y_leg = string(l_leg, format='(F4.1)')+', '+string(m_leg,format='(F4.1)')  
-    stack_plot,t,transpose(ts_arr[ts_num,*]),y_leg
-    stop
   endfor
   
+  if keyword_set(movie) then video.Cleanup
   stop
 
 
@@ -242,6 +302,6 @@ end
 
 
 
-ulf_random,'2016-09-26','2016-10-07'
+ulf_random,'2016-09-26','2016-10-07',verbose=1, /movie
 
 end
