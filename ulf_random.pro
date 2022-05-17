@@ -13,6 +13,7 @@ pro ulf_random, sdate, edate, $
   r_seed = r_seed, $ ; random seed so results are reproducible
   d_dir = d_dir, $
   o_dir = o_dir, $
+  w_dat = w_dat, $
   verbose=verbose, $
   movie=movie
   
@@ -26,6 +27,7 @@ pro ulf_random, sdate, edate, $
   if keyword_set(r_seed) then r_seed=r_seed else r_seed=17
   if keyword_set(d_dir) then d_dir=d_dir else d_dir='D:\data\magnetometer\psd\'
   if keyword_set(o_dir) then o_dir=o_dir else o_dir='D:\out_put\ulf_ran_ts\'
+  if keyword_set(w_dat) then w_dat=1 else w_dat=0
   if keyword_set(verbose) then verbose=verbose else verbose=0
   if keyword_set(movie) then movie=1 else movie=0
   
@@ -114,7 +116,8 @@ pro ulf_random, sdate, edate, $
       b_t = total(r_s.psd[h_i,0:npts-1])
       if b_t eq 0 then continue
       
-      b_spec[r_c,*] = r_s.psd[h_i,0:npts-1]
+      ; convert b psd to nT^2/mHz
+      b_spec[r_c,*] = r_s.psd[h_i,0:npts-1]/1000.
       lsh[r_c] = stn_vals.lshell[s_p]
       mlt[r_c] = m_val
       
@@ -143,8 +146,9 @@ pro ulf_random, sdate, edate, $
     ; only use frequencies upto 10 mHz (the max from the mapping)
     ; this is what Louis recommends
     ; the max frequency from the e_map is 10 mHz
-    b_spec = b_spec[0:r_c-1,0:n_elements(e_map.freq)]
-    e_spec = e_spec[0:r_c-1,0:n_elements(e_map.freq)]
+    ; convert the spectra back to [unit]/Hz
+    b_spec = b_spec[0:r_c-1,0:n_elements(e_map.freq)]*1000.
+    e_spec = e_spec[0:r_c-1,0:n_elements(e_map.freq)]*1000.
     lsh = lsh[0:r_c-1]
     mlt = mlt[0:r_c-1]
     
@@ -273,7 +277,7 @@ pro ulf_random, sdate, edate, $
       y_leg = string(l_leg, format='(F4.1)')+', '+string(m_leg,format='(F4.1)')  
       stack_plot,t,transpose(ts_arr[ts_num,*]),y_leg, $
         title='Random Sample of Time Series', xtitle = 'Time - seconds', $
-        ytitle='Electric Field Perturbation'
+        ytitle='Electric Field Perturbation - mV/m'
       xyouts,!p.clip[2], !p.clip[3], ' L/R, MLT',/device
     
       if keyword_set(movie) then begin
@@ -288,10 +292,49 @@ pro ulf_random, sdate, edate, $
   endfor
   
   if keyword_set(movie) then video.Cleanup
-  stop
 
+  
+  r_grid = sqrt(x_grid^2+y_grid^2.)
+  mlt_grid = atan(y_grid,x_grid)*180/!pi * 24/360.
+  neg_mlt = where(mlt_grid lt 0)
+  mlt_grid[neg_mlt] = mlt_grid[neg_mlt]+24
 
+  ts_final = tf.ToArray() ;in mV/m
+  ts_final = ts_final/1000. ;convert to V/m
 
+  if w_dat eq 1 then begin
+    h5_file = time_string(sd,tformat='YYYYMMDD')+'_'+time_string(ed,tformat='YYYYMMDD')
+    h5_file = 'ULF_ran_ts_'+h5_file
+    h5_file = o_dir+h5_file+'.h5'
+    
+    if (file_test(h5_file)) then file_delete, h5_file
+    
+    mg_h5_putdata, h5_file, 'tstamp',t_arr
+    mg_h5_putdata, h5_file, 'tstamp.attributes','Time of hourly time series, number of seconds since 1970  (UNIX time), units [s]'
+    
+    mg_h5_putdata, h5_file, 'delta_t',d_t
+    mg_h5_putdata, h5_file, 'delta_t.attributes','Time step of each hourly time series
+    
+    
+    mg_h5_putdata, h5_file, 'r_grid',r_grid
+    mg_h5_putdata, h5_file, 'r_grid.attribute','Radial grid position, units [RE]'
+    
+    mg_h5_putdata, h5_file, 'mlt_grid',mlt_grid
+    mg_h5_putdata, h5_file, 'mlt_grid.attributes','Magnetic Local Time grid position, units [Hr]'
+    
+    mg_h5_putdata, h5_file, 'x_grid', x_grid
+    mg_h5_putdata, h5_file, 'x_grid.attributes', 'X axis grid position, units [RE]'
+     
+    mg_h5_putdata, h5_file, 'y_grid', y_grid
+    mg_h5_putdata, h5_file, 'y_grid.attributes', 'Y axis grid position, units [RE]'
+    
+    mg_h5_putdata, h5_file, 'ts_random', ts_final
+    mg_h5_putdata, h5_file, 'ts_random.attributes', 'Array of randomized phase time series for the azimuthal electric field, ' + $
+      'array is [time,grid,hourly time series], ' + $ 
+      'array has dimensions [# elements tstamp, # elements grid, 3600/delta_t], resolution - delta t, units [V/m]'
+      
+    mg_h5_dump, h5_file
+  endif
 
 end
 
@@ -302,6 +345,8 @@ end
 
 
 
-ulf_random,'2016-09-26','2016-10-07',verbose=1, /movie
+;ulf_random,'2016-09-26','2016-10-07',verbose=1, /movie
+
+ulf_random,'2016-09-26','2016-09-27',verbose=0, w_dat=1
 
 end
